@@ -1,0 +1,4 @@
+import { ArrowRight, ShoppingBag } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+
+export default function POSWidget({ lowStockCount }: { lowStockCount: number }) { const navigate = useNavigate(); return <section className="rounded-xl bg-gray-900 p-5 text-white shadow-sm"><ShoppingBag className="h-6 w-6 text-blue-300" /><h2 className="mt-3 font-semibold">Point de vente</h2><p className="mt-1 text-sm text-gray-300">Ouvrez le terminal pour enregistrer une vente.</p>{lowStockCount > 0 && <p className="mt-3 text-xs text-amber-300">{lowStockCount} produit(s) à faible stock</p>}<button onClick={() => navigate('/sales')} className="mt-4 inline-flex items-center gap-2 text-sm font-semibold text-blue-300 hover:text-blue-200">Ouvrir le POS <ArrowRight className="h-4 w-4" /></button></section>; }

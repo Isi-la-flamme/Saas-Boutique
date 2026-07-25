@@ -1,0 +1,4 @@
+export default function RevenueChart({ data }: { data: { label: string; revenue: number }[] }) {
+  const highest = Math.max(...data.map((item) => item.revenue), 1);
+  return <section className="rounded-xl bg-white p-5 shadow-sm ring-1 ring-gray-100"><div className="mb-5"><h2 className="font-semibold text-gray-900">Chiffre d’affaires</h2><p className="text-sm text-gray-500">Les 7 derniers jours</p></div><div className="flex h-48 items-end gap-3">{data.map((item) => <div key={item.label} className="flex h-full flex-1 flex-col justify-end text-center"><div className="group relative rounded-t bg-blue-500 transition hover:bg-blue-600" style={{ height: `${Math.max((item.revenue / highest) * 100, item.revenue ? 5 : 1)}%` }} title={`${item.revenue.toLocaleString('fr-FR')} F CFA`} /><span className="mt-2 text-xs capitalize text-gray-400">{item.label}</span></div>)}</div></section>;
+}

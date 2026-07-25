@@ -1,0 +1,4 @@
+import { PackagePlus, ShoppingCart } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+
+export default function QuickActions() { const navigate = useNavigate(); return <section className="rounded-xl bg-white p-5 shadow-sm ring-1 ring-gray-100"><h2 className="font-semibold text-gray-900">Actions rapides</h2><div className="mt-4 grid grid-cols-2 gap-3"><button onClick={() => navigate('/sales')} className="rounded-lg bg-blue-600 p-3 text-left text-sm font-medium text-white hover:bg-blue-700"><ShoppingCart className="mb-2 h-5 w-5" />Nouvelle vente</button><button onClick={() => navigate('/products')} className="rounded-lg bg-gray-100 p-3 text-left text-sm font-medium text-gray-700 hover:bg-gray-200"><PackagePlus className="mb-2 h-5 w-5" />Gérer les produits</button></div></section>; }

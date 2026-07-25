@@ -1,0 +1,5 @@
+import { Trophy } from 'lucide-react';
+
+export default function TopProducts({ products }: { products: { id: number; name: string; quantity: number; revenue: number }[] }) {
+  return <section className="rounded-xl bg-white p-5 shadow-sm ring-1 ring-gray-100"><div className="flex items-center gap-2"><Trophy className="h-5 w-5 text-amber-500" /><h2 className="font-semibold text-gray-900">Meilleures ventes</h2></div><div className="mt-4 space-y-3">{products.length ? products.map((product, index) => <div className="flex items-center gap-3" key={product.id}><span className="flex h-6 w-6 items-center justify-center rounded-full bg-gray-100 text-xs font-semibold text-gray-600">{index + 1}</span><div className="min-w-0 flex-1"><p className="truncate text-sm font-medium text-gray-800">{product.name}</p><p className="text-xs text-gray-500">{product.quantity} unités</p></div><p className="text-sm font-semibold text-gray-700">{product.revenue.toLocaleString('fr-FR')}</p></div>) : <p className="py-8 text-center text-sm text-gray-500">Pas encore de ventes.</p>}</div></section>;
+}
