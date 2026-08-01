@@ -59,11 +59,16 @@ export const AuthProvider = ({ children }) => {
 
   const register = async (data) => {
     // L'inscription nécessite un tenant, on le crée d'abord
+    const tenantName = (data.tenantName || '').trim() || 'Boutique';
+    const tenantDescription = tenantName === 'Boutique'
+      ? 'Boutique'
+      : `Entreprise ${tenantName}`;
+
     try {
       // 1. Créer le tenant avec le nom saisi par l'utilisateur
       const tenantResponse = await tenantApi.create({ 
-        name: data.tenantName || 'Mon Entreprise',
-        description: `Entreprise ${data.tenantName || 'Mon Entreprise'}`
+        name: tenantName,
+        description: tenantDescription,
       });
       const tenant = tenantResponse.data;
       
