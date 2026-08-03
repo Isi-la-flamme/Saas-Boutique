@@ -62,6 +62,10 @@ Si une étape critique échoue, le script s’arrête et affiche un message clai
 ## Exemple de lancement
 
 ```bash
+Creer le fichier .env et copier le contenu de .env.example
+```
+
+```bash
 ### Backend start
 cd pos-backend
 python -m venv venv
