@@ -64,6 +64,8 @@ Si une étape critique échoue, le script s’arrête et affiche un message clai
 ```bash
 ### Backend start
 cd pos-backend
+python -m venv venv
+./venv/bin/activate ou .\venv\Scripts\activate
 pip install -r requirements.txt
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000 
 ```
