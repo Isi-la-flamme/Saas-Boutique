@@ -40,12 +40,19 @@ class DatabaseRouter:
     
     @property
     def engine(self):
-        """Retourne l'engine correspondant à l'état de la connexion"""
-        # Pour le développement, on force PostgreSQL
+        """Retourne l'engine correspondant à l'état de la connexion ou à la configuration"""
+        # Si le mode hors-ligne est explicitement demandé dans le .env
+        if hasattr(settings, "USE_OFFLINE_DB") and settings.USE_OFFLINE_DB:
+            return self._get_offline_engine()
+
+        # En développement sans forçage offline, on essaie d'être intelligent
         if settings.ENVIRONMENT == "development":
-            return self._get_online_engine()
+            if connection_monitor.is_online:
+                return self._get_online_engine()
+            else:
+                return self._get_offline_engine()
         
-        # En production, on bascule selon la connexion
+        # En production, on bascule selon l'état réel de la connexion réseau
         if connection_monitor.is_online:
             return self._get_online_engine()
         else:

@@ -1,13 +1,15 @@
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, Session
+from sqlalchemy.ext.declarative import declarative_base
 from app.core.config import settings
+from app.core.connection_monitor import connection_monitor
 import os
 
-# Créer le dossier data/
+# Créer le dossier data/ pour SQLite
 os.makedirs("data", exist_ok=True)
 
 # Engine PostgreSQL (online)
-engine = create_engine(
+online_engine = create_engine(
     settings.DATABASE_URL,
     pool_pre_ping=True,
     echo=settings.DEBUG
@@ -20,13 +22,33 @@ offline_engine = create_engine(
     echo=settings.DEBUG
 )
 
+def get_active_engine():
+    """Détermine quel engine utiliser selon le fichier .env ou l'état de la connexion"""
+    if getattr(settings, "USE_OFFLINE_DB", False):
+        return offline_engine
+    
+    if settings.ENVIRONMENT == "development":
+        if connection_monitor.is_online:
+            return online_engine
+        else:
+            return offline_engine
+            
+    if connection_monitor.is_online:
+        return online_engine
+    else:
+        return offline_engine
+
+# --- ENGINE DIRECT ---
+# On assigne directement le véritable engine (fonctionne à 100% avec inspect() et Alembic/SQLAlchemy)
+engine = get_active_engine()
+
+# Session Local liée à l'engine actif
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
-from sqlalchemy.ext.declarative import declarative_base
 Base = declarative_base()
 
 def get_db() -> Session:
-    """Dépendance FastAPI pour obtenir une session DB"""
+    """Dépendance FastAPI pour obtenir une session DB adaptée au contexte"""
     db = SessionLocal()
     try:
         yield db

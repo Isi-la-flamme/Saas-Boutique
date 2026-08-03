@@ -18,7 +18,9 @@ class ConnectionMonitor:
     
     def __init__(self, health_check_url: str = None):
         self.health_check_url = health_check_url or settings.HEALTH_CHECK_URL
-        self.status = ConnectionStatus.OFFLINE
+        # Si le mode hors-ligne est forcé dans les settings, on démarre directement en OFFLINE
+        initial_status = ConnectionStatus.OFFLINE if getattr(settings, "USE_OFFLINE_DB", False) else ConnectionStatus.OFFLINE
+        self.status = initial_status
         self._listeners: List[Callable[[ConnectionStatus], Awaitable[None]]] = []
         self._is_running = False
         self._task = None
@@ -28,6 +30,11 @@ class ConnectionMonitor:
         if self._is_running:
             return
         
+        # Si on force l'utilisation de la base hors-ligne en local, inutile de spammer des requêtes réseau inutiles
+        if getattr(settings, "USE_OFFLINE_DB", False):
+            print("📴 Mode hors-ligne forcé via la configuration (Monitoring réseau ignoré).")
+            return
+            
         self._is_running = True
         self._task = asyncio.create_task(self._monitor_loop())
     
@@ -52,6 +59,9 @@ class ConnectionMonitor:
         Vérifie l'état de la connexion.
         Retourne le nouveau statut.
         """
+        if getattr(settings, "USE_OFFLINE_DB", False):
+            return ConnectionStatus.OFFLINE
+
         try:
             async with httpx.AsyncClient(timeout=2.0) as client:
                 resp = await client.get(self.health_check_url)
@@ -85,10 +95,14 @@ class ConnectionMonitor:
     
     @property
     def is_online(self) -> bool:
+        if getattr(settings, "USE_OFFLINE_DB", False):
+            return False
         return self.status == ConnectionStatus.ONLINE
     
     @property
     def is_offline(self) -> bool:
+        if getattr(settings, "USE_OFFLINE_DB", False):
+            return True
         return self.status == ConnectionStatus.OFFLINE
 
 
