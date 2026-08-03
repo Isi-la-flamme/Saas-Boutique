@@ -1,39 +1,55 @@
+from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, Session
 from sqlalchemy.ext.declarative import declarative_base
-from app.core.database_router import db_router
+from app.core.config import settings
+from app.core.connection_monitor import connection_monitor
+import os
 
-# Base déclarative unique pour vos modèles
+# Créer le dossier data/ pour SQLite
+os.makedirs("data", exist_ok=True)
+
+# Engine PostgreSQL (online)
+online_engine = create_engine(
+    settings.DATABASE_URL,
+    pool_pre_ping=True,
+    echo=settings.DEBUG
+)
+
+# Engine SQLite (offline)
+offline_engine = create_engine(
+    settings.OFFLINE_DATABASE_URL,
+    connect_args={"check_same_thread": False} if "sqlite" in settings.OFFLINE_DATABASE_URL else {},
+    echo=settings.DEBUG
+)
+
+def get_active_engine():
+    """Détermine quel engine utiliser selon le fichier .env ou l'état de la connexion"""
+    if getattr(settings, "USE_OFFLINE_DB", False):
+        return offline_engine
+    
+    if settings.ENVIRONMENT == "development":
+        if connection_monitor.is_online:
+            return online_engine
+        else:
+            return offline_engine
+            
+    if connection_monitor.is_online:
+        return online_engine
+    else:
+        return offline_engine
+
+# --- UN VRAI ENGINE DIRECT ---
+# Plus de proxy complexe : un vrai objet Engine SQLAlchemy standard qui supporte toutes les méthodes (inspect, create_all, etc.)
+engine = get_active_engine()
+
+# Session Local
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
 Base = declarative_base()
 
-# Proxy dynamique pour l'engine et les sessions basé sur le routeur
-class ProxyEngine:
-    """Redirige dynamiquement vers l'engine actif (PostgreSQL ou SQLite)"""
-    @property
-    def _current_engine(self):
-        return db_router.engine
-
-    def connect(self, *args, **kwargs):
-        return self._current_engine.connect(*args, **kwargs)
-
-    def begin(self, *args, **kwargs):
-        return self._current_engine.begin(*args, **kwargs)
-
-    def __getattr__(self, name):
-        return getattr(self._current_engine, name)
-
-    def __sa_inspect__(self):
-        from sqlalchemy import inspect
-        return inspect(self._current_engine)
-
-# Engine global intelligent
-engine = ProxyEngine()
-
 def get_db() -> Session:
-    """
-    Dépendance FastAPI pour obtenir une session DB adaptée au contexte.
-    Utilise automatiquement PostgreSQL si connecté, sinon SQLite en local.
-    """
-    db = db_router.get_session()
+    """Dépendance FastAPI pour obtenir une session DB adaptée au contexte"""
+    db = SessionLocal()
     try:
         yield db
     finally:
