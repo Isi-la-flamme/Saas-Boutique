@@ -62,11 +62,15 @@ Si une étape critique échoue, le script s’arrête et affiche un message clai
 ## Exemple de lancement
 
 ```bash
-./start.sh preflight
-./start.sh backend
+### Backend start
+cd pos-backend
+pip install -r requirements.txt
+uvicorn app.main:app --reload --host 0.0.0.0 --port 8000 
 ```
 
 ```powershell
-.\start.ps1 -Action preflight
-.\start.ps1 -Action backend
+#### Frontend start
+cd pos-frontend
+npm install
+npm run dev
 ```
