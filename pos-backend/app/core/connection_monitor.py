@@ -1,7 +1,7 @@
-import httpx
 import asyncio
 from enum import Enum
 from typing import List, Callable, Awaitable
+from sqlalchemy import create_engine, text
 from app.core.config import settings
 
 
@@ -12,34 +12,32 @@ class ConnectionStatus(Enum):
 
 class ConnectionMonitor:
     """
-    Monitor de connexion réseau.
-    Vérifie périodiquement si l'API est accessible.
+    Monitor indépendant qui teste directement l'URL PostgreSQL configurée.
     """
     
-    def __init__(self, health_check_url: str = None):
-        self.health_check_url = health_check_url or settings.HEALTH_CHECK_URL
-        # Si le mode hors-ligne est forcé dans les settings, on démarre directement en OFFLINE
-        initial_status = ConnectionStatus.OFFLINE if getattr(settings, "USE_OFFLINE_DB", False) else ConnectionStatus.OFFLINE
-        self.status = initial_status
+    def __init__(self):
         self._listeners: List[Callable[[ConnectionStatus], Awaitable[None]]] = []
         self._is_running = False
         self._task = None
+        self.status = ConnectionStatus.OFFLINE
+        
+        # Crée un engine dédié uniquement au test de santé, avec un timeout court (2 secondes)
+        # On s'assure d'utiliser l'URL PostgreSQL principale (settings.DATABASE_URL ou équivalent)
+        pg_url = getattr(settings, "POSTGRES_DATABASE_URL", settings.DATABASE_URL)
+        self._test_engine = create_engine(
+            pg_url, 
+            connect_args={"connect_timeout": 2},
+            pool_pre_ping=True
+        )
     
     async def start(self):
-        """Démarre le monitoring en arrière-plan"""
         if self._is_running:
             return
-        
-        # Si on force l'utilisation de la base hors-ligne en local, inutile de spammer des requêtes réseau inutiles
-        if getattr(settings, "USE_OFFLINE_DB", False):
-            print("📴 Mode hors-ligne forcé via la configuration (Monitoring réseau ignoré).")
-            return
-            
         self._is_running = True
+        await self.check()
         self._task = asyncio.create_task(self._monitor_loop())
     
     async def stop(self):
-        """Arrête le monitoring"""
         self._is_running = False
         if self._task:
             self._task.cancel()
@@ -49,35 +47,33 @@ class ConnectionMonitor:
                 pass
     
     async def _monitor_loop(self):
-        """Boucle de monitoring"""
         while self._is_running:
-            await self.check()
             await asyncio.sleep(settings.SYNC_INTERVAL_SECONDS)
+            await self.check()
     
     async def check(self) -> ConnectionStatus:
-        """
-        Vérifie l'état de la connexion.
-        Retourne le nouveau statut.
-        """
-        if getattr(settings, "USE_OFFLINE_DB", False):
-            return ConnectionStatus.OFFLINE
-
+        new_status = ConnectionStatus.OFFLINE
+        
         try:
-            async with httpx.AsyncClient(timeout=2.0) as client:
-                resp = await client.get(self.health_check_url)
-                new_status = ConnectionStatus.ONLINE if resp.status_code == 200 else ConnectionStatus.OFFLINE
+            def ping_postgres():
+                with self._test_engine.connect() as conn:
+                    conn.execute(text("SELECT 1"))
+                return True
+
+            is_ok = await asyncio.to_thread(ping_postgres)
+            if is_ok:
+                new_status = ConnectionStatus.ONLINE
         except Exception:
             new_status = ConnectionStatus.OFFLINE
         
-        # Si changement, notifier les listeners
         if new_status != self.status:
+            print(f"🔄 Bascule de l'état réseau/base : {self.status.value} -> {new_status.value}")
             self.status = new_status
             await self._notify()
-        
+            
         return self.status
     
     async def _notify(self):
-        """Notifie tous les listeners du changement de statut"""
         for listener in self._listeners:
             try:
                 await listener(self.status)
@@ -85,24 +81,19 @@ class ConnectionMonitor:
                 pass
     
     def add_listener(self, listener: Callable[[ConnectionStatus], Awaitable[None]]):
-        """Ajoute un listener qui sera notifié à chaque changement"""
-        self._listeners.append(listener)
+        if listener not in self._listeners:
+            self._listeners.append(listener)
     
     def remove_listener(self, listener: Callable[[ConnectionStatus], Awaitable[None]]):
-        """Retire un listener"""
         if listener in self._listeners:
             self._listeners.remove(listener)
     
     @property
     def is_online(self) -> bool:
-        if getattr(settings, "USE_OFFLINE_DB", False):
-            return False
         return self.status == ConnectionStatus.ONLINE
     
     @property
     def is_offline(self) -> bool:
-        if getattr(settings, "USE_OFFLINE_DB", False):
-            return True
         return self.status == ConnectionStatus.OFFLINE
 
 

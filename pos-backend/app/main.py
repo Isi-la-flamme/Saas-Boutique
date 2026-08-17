@@ -10,6 +10,7 @@ from app.routers import tenant, auth, product, sale, users, admin, customer
 from app.models.customer import Customer
 from app.models.sale import Sale
 from sqlalchemy import inspect, text
+from app.core.connection_monitor import ConnectionStatus
 from app.middleware.tenant import TenantMiddleware
 
 
@@ -100,5 +101,17 @@ async def health_check():
     return {
         "status": "healthy",
         "connection": connection_monitor.status.value,
+        "sync_queue": sync_engine.queue_size
+    }
+
+
+@app.get("/connection-status")
+async def get_connection_status():
+    # Force un test instantané dès que le frontend le demande
+    current_status = await connection_monitor.check()
+    
+    return {
+        "is_online": current_status == ConnectionStatus.ONLINE,
+        "status": current_status.value,
         "sync_queue": sync_engine.queue_size
     }

@@ -1,21 +1,22 @@
+import json
 import asyncio
 from datetime import datetime
-from typing import List, Dict, Any, Optional
-from collections import deque
+from typing import Dict, Any
 from app.core.config import settings
 from app.core.connection_monitor import connection_monitor, ConnectionStatus
 from app.core.database_router import db_router
+from app.models.sync_outbox import SyncOutboxModel  # Modèle de persistance locale
 
 
 class SyncEngine:
     """
-    Moteur de synchronisation.
-    Queue les opérations offline et les replay quand la connexion revient.
+    Moteur de synchronisation avec persistance locale (Outbox Pattern).
+    Queue les opérations offline en base SQLite locale et les replay quand la connexion revient.
+    Protégé contre les crashs et les exécutions concurrentes.
     """
     
     def __init__(self, max_queue_size: int = None):
         self.max_queue_size = max_queue_size or settings.SYNC_QUEUE_MAX_SIZE
-        self.queue: deque = deque(maxlen=self.max_queue_size)
         self.is_syncing = False
         self._is_running = False
         self._task = None
@@ -43,70 +44,94 @@ class SyncEngine:
                 pass
     
     async def _sync_loop(self):
-        """Boucle de sync"""
+        """Boucle de sync périodique"""
         while self._is_running:
-            # Si online et queue non vide, on sync
-            if connection_monitor.is_online and self.queue:
+            if connection_monitor.is_online and self.queue_size > 0:
                 await self.sync()
             await asyncio.sleep(settings.SYNC_INTERVAL_SECONDS)
     
     async def _on_connection_change(self, status: ConnectionStatus):
         """Quand la connexion revient, on sync immédiatement"""
-        if status == ConnectionStatus.ONLINE and self.queue:
+        if status == ConnectionStatus.ONLINE and self.queue_size > 0:
             await self.sync()
     
     def add_operation(self, table: str, action: str, data: Dict[str, Any], tenant_id: str):
         """
-        Ajoute une opération à la queue de sync.
-        Si online, on sync immédiatement.
+        Ajoute une opération directement dans la table outbox de la base SQLite locale.
+        Si online, on déclenche la synchronisation immédiatement.
         """
-        operation = {
-            "table": table,
-            "action": action,
-            "data": data,
-            "tenant_id": tenant_id,
-            "timestamp": datetime.utcnow().isoformat(),
-            "sync_version": data.get("sync_version", 0)
-        }
+        db = db_router.get_local_session()
+        try:
+            # Gestion de la taille max de la queue : suppression de la plus ancienne si saturation
+            current_count = db.query(SyncOutboxModel).count()
+            if current_count >= self.max_queue_size:
+                oldest = db.query(SyncOutboxModel).order_by(SyncOutboxModel.created_at.asc()).first()
+                if oldest:
+                    db.delete(oldest)
+                    db.commit()
+
+            # Création de l'entrée persistance
+            outbox_entry = SyncOutboxModel(
+                table_name=table,
+                action=action,
+                data=json.dumps(data),
+                tenant_id=tenant_id,
+                sync_version=data.get("sync_version", 0),
+                created_at=datetime.utcnow()
+            )
+            db.add(outbox_entry)
+            db.commit()
+        except Exception as e:
+            db.rollback()
+            print(f"Erreur lors de l'écriture dans l'outbox locale: {e}")
+        finally:
+            db.close()
         
-        # Si queue pleine, on retire le plus ancien
-        if len(self.queue) >= self.max_queue_size:
-            self.queue.popleft()
-        
-        self.queue.append(operation)
-        
-        # Si online, on sync tout de suite
+        # Si online, on sync tout de suite en arrière-plan
         if connection_monitor.is_online:
             asyncio.create_task(self.sync())
     
     async def sync(self):
         """
-        Synchronise toutes les opérations en queue vers le cloud de manière exclusive.
+        Dépile et synchronise toutes les opérations de l'outbox locale vers le cloud de manière exclusive.
         """
-        if self.is_syncing or not self.queue:
+        if self.is_syncing:
             return
         
-        # Utilisation du verrou asynchrone pour empêcher l'entre-choc de plusieurs sync()
         async with self._lock:
-            if self.is_syncing or not self.queue:
+            if self.is_syncing:
                 return
                 
             self.is_syncing = True
-            operations = []
+            db = db_router.get_local_session()
             try:
-                # Copier la queue
-                operations = list(self.queue)
-                self.queue.clear()
+                # Récupérer toutes les opérations en attente par ordre chronologique
+                pending_ops = db.query(SyncOutboxModel).order_by(SyncOutboxModel.created_at.asc()).all()
                 
-                # Rejouer chaque opération
-                for op in operations:
-                    await self._replay_operation(op)
+                if not pending_ops:
+                    return
+
+                for op in pending_ops:
+                    operation_data = {
+                        "table": op.table_name,
+                        "action": op.action,
+                        "data": json.loads(op.data),
+                        "tenant_id": op.tenant_id,
+                        "sync_version": op.sync_version
+                    }
+                    
+                    # Rejeu vers la base/serveur distant
+                    await self._replay_operation(operation_data)
+                    
+                    # Si le rejeu réussit, on supprime l'opération de la table locale
+                    db.delete(op)
+                    db.commit()
                     
             except Exception as e:
-                # En cas d'erreur, remettre les opérations dans la queue au bon endroit
-                self.queue.extendleft(reversed(operations))
-                print(f"Sync error: {e}")
+                db.rollback()
+                print(f"Sync error (Outbox): {e}")
             finally:
+                db.close()
                 self.is_syncing = False
     
     async def _replay_operation(self, operation: Dict[str, Any]):
@@ -142,13 +167,17 @@ class SyncEngine:
     
     @property
     def queue_size(self) -> int:
-        """Nombre d'opérations en attente de sync"""
-        return len(self.queue)
+        """Nombre d'opérations en attente de sync dans la base locale"""
+        db = db_router.get_local_session()
+        try:
+            return db.query(SyncOutboxModel).count()
+        finally:
+            db.close()
     
     @property
     def is_full(self) -> bool:
         """Queue pleine ?"""
-        return len(self.queue) >= self.max_queue_size
+        return self.queue_size >= self.max_queue_size
 
 
 # Instance globale

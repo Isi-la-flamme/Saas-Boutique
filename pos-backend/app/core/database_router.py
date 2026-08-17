@@ -64,6 +64,11 @@ class DatabaseRouter:
     def get_session(self) -> Session:
         """Retourne une session DB pour l'engine actif"""
         return sessionmaker(bind=self.engine, autocommit=False, autoflush=False)()
+
+    def get_local_session(self) -> Session:
+       """Retourne TOUJOURS une session sur la base SQLite locale (pour l'outbox/sync)."""
+       engine = self._get_offline_engine()
+       return sessionmaker(bind=engine, autocommit=False, autoflush=False)()
     
     def get_db(self):
         """Dépendance FastAPI pour obtenir une session DB"""
