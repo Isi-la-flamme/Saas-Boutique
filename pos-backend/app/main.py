@@ -5,7 +5,7 @@ from app.core.config import settings
 from app.core.connection_monitor import connection_monitor
 from app.core.sync_engine import sync_engine
 from app.core.seed import seed_database
-from app.core.database import engine, Base  # ← AJOUT
+from app.core.database import Base, get_active_engine
 from app.routers import tenant, auth, product, sale, users, admin, customer
 from app.models.customer import Customer
 from app.models.sale import Sale
@@ -18,14 +18,22 @@ async def lifespan(app: FastAPI):
     """Gestion du cycle de vie de l'app"""
     print("🚀 Démarrage de l'application...")
     
+    # 0. Récupérer le bon engine au moment exact du démarrage
+    engine = get_active_engine()
+    
     # 1. CRÉER LES TABLES D'ABORD
     print("📦 Création des tables...")
     Base.metadata.create_all(bind=engine)
+    
     # Les instances déjà déployées reçoivent la nouvelle colonne sans migration manuelle.
-    columns = {column["name"] for column in inspect(engine).get_columns("sales")}
-    if "customer_id" not in columns:
-        with engine.begin() as connection:
-            connection.execute(text("ALTER TABLE sales ADD COLUMN customer_id INTEGER"))
+    try:
+        columns = {column["name"] for column in inspect(engine).get_columns("sales")}
+        if "customer_id" not in columns:
+            with engine.begin() as connection:
+                connection.execute(text("ALTER TABLE sales ADD COLUMN customer_id INTEGER"))
+    except Exception as e:
+        print(f"⚠️ Note sur la colonne customer_id (peut-être déjà présente ou gérée par Postgres): {e}")
+        
     print("✅ Tables créées")
     
     # 2. ENSUITE EXÉCUTER LE SEED
@@ -40,7 +48,6 @@ async def lifespan(app: FastAPI):
     print("🛑 Arrêt de l'application...")
     await sync_engine.stop()
     await connection_monitor.stop()
-
 
 app = FastAPI(
     title=settings.APP_NAME,

@@ -1,68 +1,44 @@
-version: '3.8'
 
 services:
   backend:
-    build:
-      context: ./pos-backend
-      dockerfile: Dockerfile
-    container_name: pos-backend
+    build: ./pos-backend
+    container_name: fast-api-service
     ports:
       - "8000:8000"
-    environment:
-      - DATABASE_URL=postgresql://postgres:postgres@db:5432/pos
-      - OFFLINE_DATABASE_URL=sqlite:///./data/pos_offline.db
-      - SECRET_KEY=${SECRET_KEY:-supersecretkeychangeinproduction}
-      - ALGORITHM=HS256
-      - ACCESS_TOKEN_EXPIRE_MINUTES=1440
-      - SUPERUSER_EMAIL=${SUPERUSER_EMAIL:-admin@saas.com}
-      - SUPERUSER_USERNAME=${SUPERUSER_USERNAME:-superadmin}
-      - SUPERUSER_PASSWORD=${SUPERUSER_PASSWORD:-SuperAdmin123!}
-      - SUPERUSER_FULL_NAME=${SUPERUSER_FULL_NAME:-Super Admin}
-      - ENVIRONMENT=production
-      - DEBUG=False
-      - SYNC_QUEUE_MAX_SIZE=255
-      - SYNC_INTERVAL_SECONDS=5
-      - HEALTH_CHECK_URL=https://api.yourapp.com/health
-    volumes:
-      - pos_data:/app/data
-    depends_on:
-      - db
-    restart: unless-stopped
+      
     networks:
-      - pos_network
+      - app-net
+
+
 
   frontend:
-    build:
-      context: ./pos-frontend
-      dockerfile: Dockerfile
-    container_name: pos-frontend
+    build: ./pos-frontend
+    container_name: react-frontend-service
     ports:
-      - "80:80"
-    depends_on:
-      - backend
-    restart: unless-stopped
+      - "5173:5173"
     networks:
-      - pos_network
+      - app-net
 
-  db:
-    image: postgres:15-alpine
-    container_name: pos-db
+
+  database:
+    image: postgres:15
+    container_name: postgres-database
     environment:
-      - POSTGRES_USER=postgres
-      - POSTGRES_PASSWORD=postgres
-      - POSTGRES_DB=pos
+      POSTGRES_USER: saas_user
+      POSTGRES_PASSWORD: saas_password
+      POSTGRES_DB: saas_db
     ports:
       - "5432:5432"
+
     volumes:
-      - postgres_data:/var/lib/postgresql/data
-    restart: unless-stopped
+      - postgres-data:/var/lib/postgresql/data
     networks:
-      - pos_network
+      - app-net
 
 volumes:
-  postgres_data:
-  pos_data:
+  postgres-data:
+    driver: local
 
 networks:
-  pos_network:
+  app-net:
     driver: bridge

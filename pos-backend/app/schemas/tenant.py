@@ -12,6 +12,8 @@ class TenantBase(BaseModel):
 
 class TenantCreate(TenantBase):
     """Création d'un tenant"""
+    name: str = Field(..., min_length=1, max_length=100)
+    description: Optional[str] = Field(None, max_length=255)
     pass
 
 

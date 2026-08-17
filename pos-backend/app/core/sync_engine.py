@@ -103,21 +103,36 @@ class SyncEngine:
             self.is_syncing = False
     
     async def _replay_operation(self, operation: Dict[str, Any]):
-        """
-        Rejoue une opération sur la DB online.
-        À implémenter par les services spécifiques.
-        """
-        # TODO: Appeler les services selon table/action
-        # Pour l'instant, on loggue
-        print(f"Replay: {operation['table']}.{operation['action']} - tenant: {operation['tenant_id']}")
+            """
+            Rejoue une opération sur la DB online en appelant les services appropriés.
+            """
+            table = operation["table"]
+            action = operation["action"]
+            data = operation["data"]
+            tenant_id = operation["tenant_id"]
+
+            print(f"Replay [Tenant: {tenant_id}] -> {table}.{action}")
+
+            # Dispatcher selon la table cible
+            if table == "sales":
+                from app.services.sale import SaleService
+                await SaleService.replay_sync(tenant_id=tenant_id, action=action, data=data)
+                
+            elif table == "products":
+                from app.services.product import ProductService
+                await ProductService.replay_sync(tenant_id=tenant_id, action=action, data=data)
+                
+            elif table == "customers":
+                from app.services.customer import CustomerService
+                await CustomerService.replay_sync(tenant_id=tenant_id, action=action, data=data)
+                
+            elif table == "tenants":
+                from app.services.tenant import TenantService
+                await TenantService.replay_sync(tenant_id=tenant_id, action=action, data=data)
+                
+            else:
+                print(f"Table de synchronisation non gérée : {table}")
         
-        # Ici on appellera les services :
-        # if operation["table"] == "tenants":
-        #     await TenantService.replay(operation)
-        # elif operation["table"] == "products":
-        #     await ProductService.replay(operation)
-        # ...
-    
     @property
     def queue_size(self) -> int:
         """Nombre d'opérations en attente de sync"""

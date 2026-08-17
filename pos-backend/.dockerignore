@@ -1,0 +1,16 @@
+# Environnements virtuels et caches Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+env/
+venv/
+
+# Fichiers de configuration sensible ou locaux
+.env
+.git
+.DS_Store
+
+# Documentation et tests inutiles en production
+tests/
+*.md

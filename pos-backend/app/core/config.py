@@ -9,26 +9,26 @@ class Settings(BaseSettings):
     DEBUG: bool = True
     
     # Database
-    DATABASE_URL: str = "postgresql://user:pass@localhost:5432/pos"
+    DATABASE_URL: str = "postgresql://saas_user:saas_password@postgres-database:5432/saas_db"    
     OFFLINE_DATABASE_URL: str = "sqlite:///./data/pos_offline.db"
+    SUPERUSER_TENANT_NAME: str = "SaaS Platform"
     
     # Bascule automatique ou manuelle vers le mode hors-ligne
-    USE_OFFLINE_DB: bool = True  # Mettre à true dans .env si on est hors-ligne
+    USE_OFFLINE_DB: bool = False  # Mettre à true dans .env si on est hors-ligne
     
     # Sync
     SYNC_QUEUE_MAX_SIZE: int = 255
     SYNC_INTERVAL_SECONDS: int = 5
-    HEALTH_CHECK_URL: str = "https://api.yourapp.com/health"
-    
+    HEALTH_CHECK_URL: str = "http://backend:8000/docs"
     # JWT
-    SECRET_KEY: str
+    SECRET_KEY: str = "Pass2Test@@"
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 1440
     
     # Super Admin
-    SUPERUSER_EMAIL: str
-    SUPERUSER_USERNAME: str
-    SUPERUSER_PASSWORD: str
+    SUPERUSER_EMAIL: str = "admin@saas.com"
+    SUPERUSER_USERNAME: str = "superadmin"
+    SUPERUSER_PASSWORD: str = "SuperAdmin123!"
     SUPERUSER_FULL_NAME: str = "Super Admin"
     
     @property

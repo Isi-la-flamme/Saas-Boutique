@@ -1,0 +1,13 @@
+# Dépendances lourdes (générées dans le conteneur via npm install)
+node_modules/
+npm-debug.log
+
+# Builds précédents
+dist/
+build/
+
+# Environnement et versioning
+.env
+.git
+.DS_Store
+README.md
