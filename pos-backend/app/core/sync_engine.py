@@ -19,6 +19,7 @@ class SyncEngine:
         self.is_syncing = False
         self._is_running = False
         self._task = None
+        self._lock = asyncio.Lock()  # Verrou pour éviter les exécutions concurrentes de sync()
         
         # S'abonner aux changements de connexion
         connection_monitor.add_listener(self._on_connection_change)
@@ -80,59 +81,65 @@ class SyncEngine:
     
     async def sync(self):
         """
-        Synchronise toutes les opérations en queue vers le cloud.
+        Synchronise toutes les opérations en queue vers le cloud de manière exclusive.
         """
         if self.is_syncing or not self.queue:
             return
         
-        self.is_syncing = True
-        try:
-            # Copier la queue
-            operations = list(self.queue)
-            self.queue.clear()
-            
-            # Rejouer chaque opération
-            for op in operations:
-                await self._replay_operation(op)
+        # Utilisation du verrou asynchrone pour empêcher l'entre-choc de plusieurs sync()
+        async with self._lock:
+            if self.is_syncing or not self.queue:
+                return
                 
-        except Exception as e:
-            # En cas d'erreur, remettre les opérations dans la queue
-            self.queue.extendleft(reversed(operations))
-            print(f"Sync error: {e}")
-        finally:
-            self.is_syncing = False
+            self.is_syncing = True
+            operations = []
+            try:
+                # Copier la queue
+                operations = list(self.queue)
+                self.queue.clear()
+                
+                # Rejouer chaque opération
+                for op in operations:
+                    await self._replay_operation(op)
+                    
+            except Exception as e:
+                # En cas d'erreur, remettre les opérations dans la queue au bon endroit
+                self.queue.extendleft(reversed(operations))
+                print(f"Sync error: {e}")
+            finally:
+                self.is_syncing = False
     
     async def _replay_operation(self, operation: Dict[str, Any]):
-            """
-            Rejoue une opération sur la DB online en appelant les services appropriés.
-            """
-            table = operation["table"]
-            action = operation["action"]
-            data = operation["data"]
-            tenant_id = operation["tenant_id"]
+        """
+        Rejoue une opération sur la DB online en appelant les services appropriés.
+        """
+        table = operation["table"]
+        action = operation["action"]
+        data = operation["data"]
+        tenant_id = operation["tenant_id"]
 
-            print(f"Replay [Tenant: {tenant_id}] -> {table}.{action}")
+        print(f"Replay [Tenant: {tenant_id}] -> {table}.{action}")
 
-            # Dispatcher selon la table cible
-            if table == "sales":
-                from app.services.sale import SaleService
-                await SaleService.replay_sync(tenant_id=tenant_id, action=action, data=data)
-                
-            elif table == "products":
-                from app.services.product import ProductService
-                await ProductService.replay_sync(tenant_id=tenant_id, action=action, data=data)
-                
-            elif table == "customers":
-                from app.services.customer import CustomerService
-                await CustomerService.replay_sync(tenant_id=tenant_id, action=action, data=data)
-                
-            elif table == "tenants":
-                from app.services.tenant import TenantService
-                await TenantService.replay_sync(tenant_id=tenant_id, action=action, data=data)
-                
-            else:
-                print(f"Table de synchronisation non gérée : {table}")
-        
+        # Dispatcher selon la table cible
+        if table == "sales":
+            from app.services.sale import SaleService
+            await SaleService.replay_sync(tenant_id=tenant_id, action=action, data=data)
+            
+        elif table == "products":
+            from app.services.product import ProductService
+            await ProductService.replay_sync(tenant_id=tenant_id, action=action, data=data)
+            
+        elif table == "customers":
+            from app.services.customer import CustomerService
+            await CustomerService.replay_sync(tenant_id=tenant_id, action=action, data=data)
+            
+        elif table == "tenants":
+            from app.services.tenant import TenantService
+            await TenantService.replay_sync(tenant_id=tenant_id, action=action, data=data)
+            
+        else:
+            print(f"Table de synchronisation non gérée : {table}")
+    
     @property
     def queue_size(self) -> int:
         """Nombre d'opérations en attente de sync"""

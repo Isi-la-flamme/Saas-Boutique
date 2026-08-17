@@ -142,5 +142,50 @@ class TenantService:
         finally:
             db.close()
 
+    @staticmethod
+    async def replay_sync(tenant_id: str, action: str, data: dict):
+        db = db_router.get_session()
+        try:
+            t_id = data.get("tenant_id") or tenant_id
+            existing = db.query(Tenant).filter(Tenant.tenant_id == t_id).first()
 
+            if action == "create":
+                if existing:
+                    return existing
+                new_record = Tenant(**data)
+                db.add(new_record)
+                db.commit()
+                db.refresh(new_record)
+                return new_record
+
+            elif action == "update":
+                if not existing:
+                    new_record = Tenant(**data)
+                    db.add(new_record)
+                    db.commit()
+                    db.refresh(new_record)
+                    return new_record
+                else:
+                    incoming_version = data.get("sync_version", 0)
+                    if existing.sync_version > incoming_version:
+                        return existing
+                    
+                    for key, value in data.items():
+                        setattr(existing, key, value)
+                    
+                    # Mise à jour de la version
+                    existing.sync_version = max(incoming_version, existing.sync_version + 1)
+                    
+                    db.commit()
+                    db.refresh(existing)
+                    return existing
+
+            elif action == "delete":
+                if existing:
+                    db.delete(existing)
+                    db.commit()
+                return True
+        finally:
+            db.close()
+            
 tenant_service = TenantService()

@@ -223,4 +223,61 @@ class SaleService:
             db.close()
 
 
+    @staticmethod
+    async def replay_sync(tenant_id: str, action: str, data: dict):
+        db = db_router.get_session(tenant_id)
+        try:
+            sale_id = data.get("id")
+            existing_sale = db.query(Sale).filter(
+                Sale.id == sale_id,
+                Sale.tenant_id == tenant_id
+            ).first()
+
+            if action == "create":
+                if existing_sale:
+                    return existing_sale
+                
+                # Nettoyage ou conversion des enums si nécessaire selon le format reçu
+                new_sale = Sale(**data)
+                db.add(new_sale)
+                db.commit()
+                db.refresh(new_sale)
+                return new_sale
+
+            elif action == "update":
+                if not existing_sale:
+                    # Upsert de sécurité si la vente n'existe pas encore
+                    new_sale = Sale(**data)
+                    db.add(new_sale)
+                    db.commit()
+                    db.refresh(new_sale)
+                    return new_sale
+                else:
+                    incoming_version = data.get("sync_version", 0)
+                    if existing_sale.sync_version > incoming_version:
+                        return existing_sale
+                    
+                    for key, value in data.items():
+                        setattr(existing_sale, key, value)
+                    
+                    # Mise à jour de la version
+                    existing_sale.sync_version = max(incoming_version, existing_sale.sync_version + 1)
+                    
+                    db.commit()
+                    db.refresh(existing_sale)
+                    return existing_sale
+
+            elif action == "delete":
+                if existing_sale:
+                    db.delete(existing_sale)
+                    db.commit()
+                return True
+
+        except Exception as e:
+            db.rollback()
+            raise e
+        finally:
+            db.close()
+
+
 sale_service = SaleService()
