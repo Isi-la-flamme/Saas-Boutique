@@ -1,6 +1,10 @@
 # app/core/config.py
 from pydantic_settings import BaseSettings
 from typing import Optional
+from pathlib import Path
+
+
+ROOT_ENV_FILE = Path(__file__).resolve().parents[3] / ".env"
 
 class Settings(BaseSettings):
     # Application
@@ -12,6 +16,7 @@ class Settings(BaseSettings):
     DATABASE_URL: str = "postgresql://saas_user:saas_password@postgres-database:5432/saas_db"    
     OFFLINE_DATABASE_URL: str = "sqlite:///./data/pos_offline.db"
     SUPERUSER_TENANT_NAME: str = "SaaS Platform"
+    SUPERUSER_TENANT_ID: str = "tenant_platform"
     
     # Bascule automatique ou manuelle vers le mode hors-ligne
     USE_OFFLINE_DB: bool = False  # Mettre à true dans .env si on est hors-ligne
@@ -39,7 +44,8 @@ class Settings(BaseSettings):
         return self.DATABASE_URL
 
     class Config:
-        env_file = ".env"
+        # Le même fichier est utilisé par Docker, le backend local et Vite.
+        env_file = str(ROOT_ENV_FILE)
         env_file_encoding = "utf-8"
         extra = "ignore"
 

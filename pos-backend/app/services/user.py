@@ -3,7 +3,7 @@ from typing import Optional, List, Dict, Any
 from app.models.user import User
 from app.schemas.user import UserCreate, UserResponse
 from app.core.security import get_password_hash
-from app.core import db_router
+from app.core import db_router, sync_engine
 
 
 class UserService:
@@ -37,6 +37,21 @@ class UserService:
             db.add(user)
             db.commit()
             db.refresh(user)
+
+            sync_engine.add_operation(
+                table="users",
+                action="create",
+                data={
+                    "tenant_id": user.tenant_id,
+                    "email": user.email,
+                    "username": user.username,
+                    "full_name": user.full_name,
+                    "hashed_password": user.hashed_password,
+                    "is_active": user.is_active,
+                    "is_superuser": user.is_superuser,
+                },
+                tenant_id=tenant_id,
+            )
             
             return UserResponse.model_validate(user)
         finally:
@@ -99,6 +114,20 @@ class UserService:
             user.is_active = not user.is_active
             db.commit()
             db.refresh(user)
+            sync_engine.add_operation(
+                table="users",
+                action="update",
+                data={
+                    "tenant_id": user.tenant_id,
+                    "email": user.email,
+                    "username": user.username,
+                    "full_name": user.full_name,
+                    "hashed_password": user.hashed_password,
+                    "is_active": user.is_active,
+                    "is_superuser": user.is_superuser,
+                },
+                tenant_id=user.tenant_id,
+            )
             return UserResponse.model_validate(user)
         finally:
             db.close()
@@ -113,10 +142,38 @@ class UserService:
             user = query.first()
             if not user:
                 return False
-            
+            payload = {"email": user.email, "tenant_id": user.tenant_id}
             db.delete(user)
             db.commit()
+            sync_engine.add_operation(
+                table="users", action="delete", data=payload, tenant_id=user.tenant_id
+            )
             return True
+        finally:
+            db.close()
+
+    @staticmethod
+    async def replay_sync(tenant_id: str, action: str, data: dict):
+        """Rejoue un utilisateur sur PostgreSQL via son e-mail (clé stable)."""
+        db = db_router.get_online_session()
+        try:
+            existing = db.query(User).filter(User.email == data.get("email")).first()
+            if action == "delete":
+                if existing:
+                    db.delete(existing)
+                    db.commit()
+                return True
+
+            if existing:
+                for key, value in data.items():
+                    setattr(existing, key, value)
+            else:
+                db.add(User(**data))
+            db.commit()
+            return existing
+        except Exception:
+            db.rollback()
+            raise
         finally:
             db.close()
 

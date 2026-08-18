@@ -33,11 +33,11 @@ class TenantService:
             db.commit()
             db.refresh(tenant)
             
+            # 💡 CORRECTION : On ne transmet PAS l'ID entier local pour laisser Postgres gérer sa séquence
             sync_engine.add_operation(
                 table="tenants",
                 action="create",
                 data={
-                    "id": tenant.id,
                     "tenant_id": tenant.tenant_id,
                     "name": tenant.name,
                     "description": tenant.description,
@@ -101,11 +101,11 @@ class TenantService:
             db.commit()
             db.refresh(tenant)
             
+            # 💡 CORRECTION : Pareil ici, pas d'ID entier
             sync_engine.add_operation(
                 table="tenants",
                 action="update",
                 data={
-                    "id": tenant.id,
                     "tenant_id": tenant.tenant_id,
                     "name": tenant.name,
                     "description": tenant.description,
@@ -144,8 +144,12 @@ class TenantService:
 
     @staticmethod
     async def replay_sync(tenant_id: str, action: str, data: dict):
-        db = db_router.get_session()
+        # Le replay doit toujours écrire sur PostgreSQL.
+        db = db_router.get_online_session()
         try:
+            # Nettoyage de sécurité supplémentaire au cas où un vieux payload contiendrait encore l'id
+            data.pop("id", None)
+            
             t_id = data.get("tenant_id") or tenant_id
             existing = db.query(Tenant).filter(Tenant.tenant_id == t_id).first()
 
@@ -173,7 +177,6 @@ class TenantService:
                     for key, value in data.items():
                         setattr(existing, key, value)
                     
-                    # Mise à jour de la version
                     existing.sync_version = max(incoming_version, existing.sync_version + 1)
                     
                     db.commit()

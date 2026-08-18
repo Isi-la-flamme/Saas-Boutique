@@ -1,5 +1,6 @@
 from fastapi import Request, HTTPException, status
 from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.responses import JSONResponse
 from app.services.tenant import tenant_service
 from app.core.config import settings
 
@@ -46,17 +47,17 @@ class TenantMiddleware(BaseHTTPMiddleware):
                 return await call_next(request)
         
         if not tenant_id:
-            raise HTTPException(
+            return JSONResponse(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Missing X-Tenant-ID header"
+                content={"detail": "Missing X-Tenant-ID header"}
             )
         
         # Vérifier que le tenant existe
         tenant = tenant_service.get(tenant_id)
         if not tenant:
-            raise HTTPException(
+            return JSONResponse(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Tenant {tenant_id} not found"
+                content={"detail": f"Tenant {tenant_id} not found"}
             )
         
         # Stocker le tenant dans request.state

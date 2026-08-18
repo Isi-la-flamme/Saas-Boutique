@@ -1,43 +1,48 @@
 from sqlalchemy.orm import sessionmaker
+
 from app.core.config import settings
-from app.models.user import User
-from app.schemas.tenant import TenantCreate
-from app.services.tenant import TenantService
+from app.core.database import get_active_engine
 from app.core.security import get_password_hash
+from app.models.tenant import Tenant
+from app.models.user import User
 
 
-from app.core.database import get_active_engine # <-- Importez l'engine dynamique
+def seed_database(engine=None):
+    """Initialise une base précise avec le même tenant système et le même admin.
 
-def seed_database():
+    Le seed ne passe volontairement pas par les services : ceux-ci choisissent
+    une base selon l'état réseau, ce qui pouvait répartir le tenant et son
+    utilisateur entre SQLite et PostgreSQL au démarrage.
     """
-    Initialise les données de base de l'application sur le moteur actif (PostgreSQL ou SQLite).
-    """
-    # Création dynamique de la session basée sur l'engine réellement actif
-    active_engine = get_active_engine()
-    DynamicSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=active_engine)
-    
-    db = DynamicSessionLocal()
+    target_engine = engine or get_active_engine()
+    db = sessionmaker(autocommit=False, autoflush=False, bind=target_engine)()
     try:
+        existing_user = db.query(User).filter(User.email == settings.SUPERUSER_EMAIL).first()
+        if not existing_user:
+            # Une base existante peut avoir été initialisée avec un ancien
+            # e-mail de configuration. Son super-admin reste l'unique seed.
+            existing_user = db.query(User).filter(User.is_superuser.is_(True)).first()
 
-        SUPERUSER_EMAIL = settings.SUPERUSER_EMAIL
-        # 1. Vérifier si le super admin existe déjà
-        existing = db.query(User).filter(User.email == SUPERUSER_EMAIL).first()
-        if existing:
-            print(f"✅ Super admin déjà existant: {SUPERUSER_EMAIL}")
+        # Préserve l'identifiant des anciens seeds : un utilisateur déjà créé
+        # doit toujours retrouver son tenant après la mise à jour.
+        tenant_id = existing_user.tenant_id if existing_user else settings.SUPERUSER_TENANT_ID
+        tenant = db.query(Tenant).filter(Tenant.tenant_id == tenant_id).first()
+        if not tenant:
+            tenant = Tenant(
+                tenant_id=tenant_id,
+                name=settings.SUPERUSER_TENANT_NAME,
+                description="Plateforme SaaS - Administration",
+                is_active=True,
+                sync_source="seed",
+            )
+            db.add(tenant)
+            db.flush()
+
+        if existing_user:
+            db.commit()
+            print(f"Super admin déjà présent: {settings.SUPERUSER_EMAIL}")
             return
-        
-        # 2. Créer le tenant
-        print("📦 Création du tenant SaaS Platform...")
-        tenant_data = TenantCreate(
-            name=settings.SUPERUSER_TENANT_NAME,
-            description="Plateforme SaaS - Administration"
-        )
 
-        tenant = TenantService.create(tenant_data)
-        print(f"✅ Tenant créé: {tenant.tenant_id}")
-        
-        # 3. Créer le super admin
-        print("👤 Création du super admin...")
         superuser = User(
             tenant_id=tenant.tenant_id,
             email=settings.SUPERUSER_EMAIL,
@@ -45,19 +50,12 @@ def seed_database():
             full_name=settings.SUPERUSER_FULL_NAME,
             hashed_password=get_password_hash(settings.SUPERUSER_PASSWORD),
             is_active=True,
-            is_superuser=True
+            is_superuser=True,
         )
         db.add(superuser)
         db.commit()
-        db.refresh(superuser)
-        
-        print(f"✅ Super admin créé avec succès !")
-        print(f"   📧 Email: {settings.SUPERUSER_EMAIL}")
-        print(f"   🔑 Mot de passe: {settings.SUPERUSER_PASSWORD}")
-        print(f"   🏢 Tenant: {settings.SUPERUSER_TENANT_NAME}")
-        
-    except Exception as e:
-        print(f"❌ Erreur lors du seed: {e}")
+        print(f"Super admin créé: {settings.SUPERUSER_EMAIL}")
+    except Exception:
         db.rollback()
         raise
     finally:

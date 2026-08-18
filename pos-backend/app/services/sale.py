@@ -225,7 +225,8 @@ class SaleService:
 
     @staticmethod
     async def replay_sync(tenant_id: str, action: str, data: dict):
-        db = db_router.get_session(tenant_id)
+        # Le replay doit toujours écrire sur PostgreSQL.
+        db = db_router.get_online_session()
         try:
             sale_id = data.get("id")
             existing_sale = db.query(Sale).filter(

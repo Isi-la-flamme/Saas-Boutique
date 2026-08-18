@@ -1,35 +1,52 @@
-
 services:
+  # --- Service Backend (API) ---
   backend:
     build: ./pos-backend
     container_name: fast-api-service
+    restart: unless-stopped
     ports:
       - "8000:8000"
-      
+    volumes:
+      # Même fichier SQLite que le lancement local hors-ligne. Sans ce volume,
+      # Docker créait une seconde base vide et ne pouvait rien synchroniser.
+      - ./pos-backend/data:/app/data
+    env_file:
+      - .env
+    environment:
+      - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@database:5432/${POSTGRES_DB}
+      - OFFLINE_DATABASE_URL=sqlite:///./data/pos_offline.db
+      - SECRET_KEY=${SECRET_KEY}
+      - SUPERUSER_EMAIL=${SUPERUSER_EMAIL}
+      - SUPERUSER_USERNAME=${SUPERUSER_USERNAME}
+      - SUPERUSER_PASSWORD=${SUPERUSER_PASSWORD}
+      - SUPERUSER_FULL_NAME=${SUPERUSER_FULL_NAME}
     networks:
       - app-net
+    depends_on:
+      - database
 
-
-
+  # --- Service Frontend (React) ---
   frontend:
-    build: ./pos-frontend
+    build: 
+      context: ./pos-frontend
+      args:
+        - VITE_API_URL=${VITE_API_URL}
     container_name: react-frontend-service
+    restart: unless-stopped
     ports:
-      - "5173:5173"
+      - "5173:5173" 
     networks:
       - app-net
 
-
+  # --- Service Base de données (PostgreSQL) ---
   database:
     image: postgres:15
     container_name: postgres-database
+    restart: unless-stopped
     environment:
-      POSTGRES_USER: saas_user
-      POSTGRES_PASSWORD: saas_password
-      POSTGRES_DB: saas_db
-    ports:
-      - "5432:5432"
-
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
     volumes:
       - postgres-data:/var/lib/postgresql/data
     networks:

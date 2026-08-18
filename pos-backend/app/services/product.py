@@ -162,7 +162,9 @@ class ProductService:
 
     @staticmethod
     async def replay_sync(tenant_id: str, action: str, data: dict):
-        db = db_router.get_session(tenant_id)
+        # Le replay doit toujours écrire sur PostgreSQL, y compris quand les
+        # requêtes utilisateur restent volontairement en mode offline.
+        db = db_router.get_online_session()
         try:
             record_id = data.get("id")
             existing = db.query(Product).filter(Product.id == record_id, Product.tenant_id == tenant_id).first()

@@ -116,24 +116,20 @@ function Preflight() {
   ValidateDir $BackendDir
   ValidateDir $FrontendDir
 
-  # Gestion automatique du fichier .env depuis .env.exemple ou .env.example
-  $EnvFile = Join-Path $BackendDir '.env'
+  # Un seul fichier de configuration est utilisé à la racine du projet.
+  $EnvFile = Join-Path $Root '.env'
   if (-Not (Test-Path $EnvFile)) {
     $FoundExample = $null
     foreach ($name in @('.env.exemple', '.env.example')) {
       $candidateRoot = Join-Path $Root $name
-      $candidateBackend = Join-Path $BackendDir $name
       if (Test-Path $candidateRoot) {
         $FoundExample = $candidateRoot
-        break
-      } elseif (Test-Path $candidateBackend) {
-        $FoundExample = $candidateBackend
         break
       }
     }
 
     if ($FoundExample) {
-      Info "Copie de $(Split-Path $FoundExample -Leaf) vers pos-backend/.env..."
+      Info "Copie de $(Split-Path $FoundExample -Leaf) vers .env..."
       Copy-Item $FoundExample $EnvFile
     } else {
       Info "Attention : Aucun fichier .env.exemple ou .env.example n'a été trouvé."

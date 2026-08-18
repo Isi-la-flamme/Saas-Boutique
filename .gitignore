@@ -1,0 +1,6 @@
+.env
+data/
+pos-backend/data/
+pos-backend/.venv/
+pos-frontend/node_modules/
+pos-frontend/dist/

@@ -25,6 +25,10 @@ class DatabaseRouter:
                 echo=settings.DEBUG
             )
         return self._online_engine
+
+    def get_online_engine(self):
+        """Retourne PostgreSQL, sans tenir compte du mode de lecture offline."""
+        return self._get_online_engine()
     
     def _get_offline_engine(self):
         """Retourne l'engine SQLite"""
@@ -37,20 +41,21 @@ class DatabaseRouter:
                 echo=settings.DEBUG
             )
         return self._offline_engine
+
+    def get_local_engine(self):
+        """Retourne SQLite, notamment pour l'initialisation locale."""
+        return self._get_offline_engine()
     
     @property
     def engine(self):
-        """Retourne l'engine correspondant à l'état de la connexion ou à la configuration"""
-        # 1. Si le mode hors-ligne est explicitement demandé dans le .env
-        if hasattr(settings, "USE_OFFLINE_DB") and settings.USE_OFFLINE_DB:
-            return self._get_offline_engine()
+        """Retourne toujours SQLite pour les requêtes métier.
 
-        # 2. Si le moniteur est explicitement OFFLINE, on bascule sur SQLite.
-        # Sinon (au démarrage, en cours de test, ou ONLINE), on privilégie PostgreSQL.
-        if connection_monitor.status == ConnectionStatus.OFFLINE:
-            return self._get_offline_engine()
-        
-        return self._get_online_engine()
+        L'application est *offline-first* : écrire directement dans PostgreSQL
+        lorsqu'il est joignable rend la copie locale incomplète et casse le
+        basculement hors-ligne. PostgreSQL est réservé aux sessions explicites
+        de synchronisation (``get_online_session``).
+        """
+        return self._get_offline_engine()
 
     
     @property
@@ -69,6 +74,15 @@ class DatabaseRouter:
        """Retourne TOUJOURS une session sur la base SQLite locale (pour l'outbox/sync)."""
        engine = self._get_offline_engine()
        return sessionmaker(bind=engine, autocommit=False, autoflush=False)()
+
+    def get_online_session(self) -> Session:
+        """Session PostgreSQL dédiée au rejeu de l'outbox.
+
+        Le flag USE_OFFLINE_DB décide où vont les requêtes utilisateur. Il ne
+        doit jamais rediriger un rejeu vers SQLite, sinon une opération est
+        marquée comme synchronisée sans avoir quitté la machine locale.
+        """
+        return sessionmaker(bind=self._get_online_engine(), autocommit=False, autoflush=False)()
     
     def get_db(self):
         """Dépendance FastAPI pour obtenir une session DB"""

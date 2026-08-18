@@ -89,7 +89,8 @@ class CustomerService:
 
     @staticmethod
     async def replay_sync(tenant_id: str, action: str, data: dict):
-        db = db_router.get_session(tenant_id)
+        # Le replay doit toujours écrire sur PostgreSQL.
+        db = db_router.get_online_session()
         try:
             record_id = data.get("id")
             existing = db.query(Customer).filter(Customer.id == record_id, Customer.tenant_id == tenant_id).first()

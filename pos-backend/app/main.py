@@ -5,7 +5,8 @@ from app.core.config import settings
 from app.core.connection_monitor import connection_monitor
 from app.core.sync_engine import sync_engine
 from app.core.seed import seed_database
-from app.core.database import Base, get_active_engine
+from app.core.database import Base
+from app.core.database_router import db_router
 from app.routers import tenant, auth, product, sale, users, admin, customer
 from app.models.customer import Customer
 from app.models.sale import Sale
@@ -19,8 +20,9 @@ async def lifespan(app: FastAPI):
     """Gestion du cycle de vie de l'app"""
     print("🚀 Démarrage de l'application...")
     
-    # 0. Récupérer le bon engine au moment exact du démarrage
-    engine = get_active_engine()
+    # SQLite est toujours initialisée en premier : elle est la source locale
+    # persistante, y compris quand PostgreSQL est disponible au démarrage.
+    engine = db_router.get_local_engine()
     
     # 1. CRÉER LES TABLES D'ABORD
     print("📦 Création des tables...")
@@ -38,7 +40,7 @@ async def lifespan(app: FastAPI):
     print("✅ Tables créées")
     
     # 2. ENSUITE EXÉCUTER LE SEED
-    seed_database()
+    seed_database(engine=engine)
     
     await connection_monitor.start()
     await sync_engine.start()
